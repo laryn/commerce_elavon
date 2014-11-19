@@ -487,7 +487,7 @@ function commerce_elavon_request($payment_method, $info = array()) {
       watchdog('commerce_elavon', 'API response received:<pre>@xml</pre>', array('@xml' => $xml->asXML()));
     }
 
-    $response['status'] = ((string) $xml->ssl_result === '0') ? TRUE : FALSE;
+    $response['status'] = ((string) $xml->ssl_result_message === 'APPROVAL') ? TRUE : FALSE;
     $response['msg'] = (string) $xml->ssl_result_message;
     // Request approved, Save original xml responce with all data.
     $response['xml'] = $xml;
