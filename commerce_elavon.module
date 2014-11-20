@@ -77,6 +77,9 @@ function commerce_elavon_commerce_payment_method_info() {
     'short_title' => t('Elavon direct processing'),
     'display_title' => t('Credit card'),
     'description' => t('Integrates Elavon direct processing payment, direct or delayed capture '),
+    'cardonfile' => array(
+      'charge callback' => 'commerce_elavon_direct_cardonfile_charge',
+    ),
   );
 
   return $payment_methods;
@@ -96,6 +99,7 @@ function commerce_elavon_default_settings() {
     'log' => array('request' => '0', 'response' => '0'),
     'failure_interval' => '',
     'max_failures' => '',
+    'cardonfile' => FALSE,
   );
 }
 
@@ -160,6 +164,21 @@ function commerce_elavon_base_settings_form($settings) {
     '#default_value' => $settings['log'],
   );
 
+  if (module_exists('commerce_cardonfile')) {
+    $form['cardonfile'] = array(
+      '#type' => 'checkbox',
+      '#title' => t('Enable Card on File functionality.'),
+      '#description' => t('Stores tokenized value for card data.'),
+      '#default_value' => $settings['cardonfile'],
+    );
+  }
+  else {
+    $form['cardonfile'] = array(
+      '#type' => 'markup',
+      '#markup' => t('To enable Card on File functionality download and install the Card on File module.'),
+    );
+  }
+
   return $form;
 }
 
@@ -175,6 +194,12 @@ function commerce_elavon_direct_submit_form($payment_method, $pane_values, $chec
  * Payment method callback: checkout form validation - Direct.
  */
 function commerce_elavon_direct_submit_form_validate($payment_method, $pane_form, $pane_values, $order, $form_parents = array()) {
+  // If the customer specified a card on file, skip the normal validation.
+  if (module_exists('commerce_cardonfile') && !empty($payment_method['settings']['cardonfile']) &&
+    !empty($pane_values['cardonfile']) && $pane_values['cardonfile'] !== 'new') {
+    return;
+  }
+
   module_load_include('inc', 'commerce_payment', 'includes/commerce_payment.credit_card');
 
   // Validate the credit card fields.
@@ -191,56 +216,75 @@ function commerce_elavon_direct_submit_form_validate($payment_method, $pane_form
  * Payment method callback: checkout form submission - Direct.
  */
 function commerce_elavon_direct_submit_form_submit($payment_method, $pane_form, $pane_values, $order, $charge) {
-  $billing_data = commerce_elavon_get_billing_info($order);
+  // If the customer specified payment using a card on file, attempt that now
+  // and simply return the result.
+  if (module_exists('commerce_cardonfile') && $payment_method['settings']['cardonfile'] &&
+    !empty($pane_values['cardonfile']) && $pane_values['cardonfile'] !== 'new') {
+
+    // First attempt to load the card on file.
+    $card_data = commerce_cardonfile_load($pane_values['cardonfile']);
+
+    // Fail now if it is no longer available or the card is inactive.
+    if (empty($card_data) || $card_data->status == 0) {
+      drupal_set_message(t('The requested card on file is no longer valid.'), 'error');
+      return FALSE;
+    }
+
+    return commerce_elavon_direct_cardonfile_charge($payment_method, $card_data, $order, $charge);
+  }
+
   $info = array(
     'ssl_card_number' => $pane_values['credit_card']['number'],
     'ssl_exp_date' => $pane_values['credit_card']['exp_month'] . substr($pane_values['credit_card']['exp_year'], 2, 2),
+    'card_exp_month' => $pane_values['credit_card']['exp_month'],
+    'card_exp_year' => $pane_values['credit_card']['exp_year'],
   );
+
   if (isset($pane_values['credit_card']['code'])) {
-    $info['CVNum'] = $pane_values['credit_card']['code'];
+    $info += array(
+      'ssl_cvv2cvc2' => $pane_values['credit_card']['code'],
+    );
   }
 
-  // Build a name-value pair array for this transaction.
-  $info += array(
-    'ssl_amount' => commerce_currency_amount_to_decimal($charge['amount'], $charge['currency_code']),
-    'MagData' => '',
-  );
+  if (module_exists('commerce_cardonfile') && !empty($payment_method['settings']['cardonfile']) &&
+    !empty($pane_values['credit_card']['cardonfile_store']) && $pane_values['credit_card']['cardonfile_store']) {
 
-  // Set Tax amount
-  $sales_tax_total = 0;
-  // Loop through and get all tax elements and add them up
-  $order_working_array = $order->commerce_order_total['und'][0]['data']['components'];
-  foreach($order_working_array as $id => $order_working_array_element) {
-	  if(strpos($order_working_array_element['name'], 'tax') !== FALSE) {
-		  $sales_tax_total += $order_working_array_element['price']['amount'];
-	  }
+    // Tell Elavon we want to generate a token.
+    // Note: We should also be able to store it in the card manager but during
+    // my tests, it wasn't working, in order to do that, we should send
+    // ssl_add_token => Y.
+    $info += array(
+      'ssl_get_token' => 'Y',
+      'cardonfile_instance_default' => $pane_values['cardonfile_instance_default'],
+    );
   }
-  $ssl_salestax = commerce_currency_amount_to_decimal($sales_tax_total, $charge['currency_code']);
 
-  $card_name_parts = explode(' ', $billing_data['name_on_card']);
-  $card_name_array['first_name'] = array_shift($card_name_parts);
-  $card_name_array['last_name'] = implode(' ', $card_name_parts);
+  return commerce_elavon_transaction_process($payment_method, $info, $order, $charge);
+}
 
-  $info += array(
-    'ssl_avs_address' => $billing_data['street'],
-    'ssl_avs_zip' => $billing_data['zip'],
-    'ssl_first_name' => $card_name_array['first_name'],
-    'ssl_last_name' => $card_name_array['last_name'],
-    'ssl_transaction_type' => 'ccsale',
-    'ssl_cvv2cvc2' => $pane_values['credit_card']['code'],
-    'ssl_salestax' => $ssl_salestax,
-  );
-
-  // Add additional transaction information to the request array.
-  $info += array(
-    'InvNum' => $order->order_number,
-  );
-
-  $info += array(
-    'NameOnCard' => $billing_data['name_on_card'],
-    'Street' => $billing_data['street'],
-    'Zip' => $billing_data['zip'],
-    'ExtData' => $billing_data['ext_data'],
+/**
+ * Card on file callback: background charge payment.
+ *
+ * @param object $payment_method
+ *   The payment method instance definition array.
+ * @param $card_data
+ *   Card on File entity.
+ * @param $order
+ *   The order object that is being processed.
+ * @param array $charge
+ *   The price array for the charge amount with keys of 'amount' and 'currency'
+ *   If null the total value of the order is used.
+ *
+ * @return FALSE if the transaction was not successful, TRUE otherwise.
+ */
+function commerce_elavon_direct_cardonfile_charge($payment_method, $card_data, $order, $charge = NULL) {
+  // Format order total for the transaction.
+  if (!isset($charge)) {
+    $charge = commerce_payment_order_balance($order);
+  }
+  $info = array(
+    'ssl_token' => $card_data->remote_id,
+    'ssl_exp_date' => $card_data->card_exp_month . substr($card_data->card_exp_year, 2, 2),
   );
 
   return commerce_elavon_transaction_process($payment_method, $info, $order, $charge);
@@ -250,8 +294,61 @@ function commerce_elavon_direct_submit_form_submit($payment_method, $pane_form, 
  * Proceed to the payment and record a transaction.
  */
 function commerce_elavon_transaction_process($payment_method, $info, $order, $charge) {
+  // Set Tax amount
+  $sales_tax_total = 0;
+  // Loop through and get all tax elements and add them up.
+  $order_working_array = $order->commerce_order_total[LANGUAGE_NONE][0]['data']['components'];
+
+  foreach ($order_working_array as $id => $order_working_array_element) {
+    if (strpos($order_working_array_element['name'], 'tax') !== FALSE) {
+      $sales_tax_total += $order_working_array_element['price']['amount'];
+    }
+  }
+  $ssl_salestax = commerce_currency_amount_to_decimal($sales_tax_total, $charge['currency_code']);
+
+  // Prepare the billing information.
+  $billing_data = commerce_elavon_get_billing_info($order);
+  // Build a name-value pair array for this transaction.
+  $info += array(
+    'ssl_amount' => commerce_currency_amount_to_decimal($charge['amount'], $charge['currency_code']),
+    'ssl_avs_address' => $billing_data['street'],
+    'ssl_avs_zip' => $billing_data['zip'],
+    'ssl_first_name' => $billing_data['first_name'],
+    'ssl_last_name' => $billing_data['last_name'],
+    'ssl_salestax' => $ssl_salestax,
+    'ssl_invoice_number' => $order->order_number,
+    // The 4 following items elements are not sent to Elavon, they are kept
+    // most probably because other modules are using them.
+    'NameOnCard' => $billing_data['name_on_card'],
+    'Street' => $billing_data['street'],
+    'Zip' => $billing_data['zip'],
+    'ExtData' => $billing_data['ext_data'],
+  );
   // Submit the request to Elavon.
   $response = commerce_elavon_request($payment_method, $info);
+
+  // Store the card.
+  if ($response['status'] && isset($info['ssl_get_token']) && isset($response['xml']->ssl_token_response)) {
+    $token_response = ((string) $response['xml']->ssl_token_response === 'SUCCESS') ? TRUE : FALSE;
+
+    if ($token_response) {
+      $card_data = commerce_cardonfile_new();
+      $card_data->uid = $order->uid;
+      $card_data->payment_method = $payment_method['method_id'];
+      $card_data->instance_id = $payment_method['instance_id'];
+      $card_data->remote_id = (string) $response['xml']->ssl_token;
+      $card_data->card_type = !empty($card_type) ? $card_type : 'card';
+      $card_data->card_name = !empty($billing_data['name_on_card']) ? $billing_data['name_on_card'] : '';
+      $card_data->card_number = substr($info['ssl_card_number'], -4);
+      $card_data->card_exp_month = $info['card_exp_month'];
+      $card_data->card_exp_year = $info['card_exp_year'];
+      $card_data->instance_default = $info['cardonfile_instance_default'];
+      $card_data->status = 1;
+
+      // Save and log the creation of the new card on file.
+      commerce_cardonfile_save($card_data);
+    }
+  }
 
   // Prepare a transaction object to log the API response.
   $transaction = commerce_payment_transaction_new('elavon_direct', $order->order_id);
@@ -404,6 +501,8 @@ function commerce_elavon_request($payment_method, $info = array()) {
     'ssl_user_id' => $payment_method['settings']['userid'],
     'ssl_pin' => $payment_method['settings']['pin'],
     'ssl_show_form' => 'false',
+    'ssl_test_mode' => 'false',
+    'ssl_transaction_type' => 'ccsale',
   );
 
   // Allow modules to alter parameters of the API request.
@@ -425,31 +524,26 @@ function commerce_elavon_request($payment_method, $info = array()) {
       $log_nvp['CcAccountNum'] = str_repeat('X', strlen($log_nvp['CcAccountNum']) - 4) . substr($log_nvp['CcAccountNum'], -4);
     }
 
-    if (!empty($log_nvp['CVNum'])) {
-      $log_nvp['CVNum'] = str_repeat('X', strlen($log_nvp['CVNum']));
+    if (!empty($log_nvp['ssl_cvv2cvc2'])) {
+      $log_nvp['ssl_cvv2cvc2'] = str_repeat('X', strlen($log_nvp['ssl_cvv2cvc2']));
     }
 
     watchdog('commerce_elavon', 'Elavon request to @url: !param', array('@url' => $url, '!param' => '<pre>' . check_plain(print_r($log_nvp, TRUE)) . '</pre>'), WATCHDOG_DEBUG);
   }
 
   // Prepare xml for Elavon.
-  $xmldata = "xmldata=<txn>";
-  $xmldata .= "<ssl_merchant_id>" . $info['ssl_merchant_id'] . "</ssl_merchant_id>";
-  $xmldata .= "<ssl_user_id>" . $info['ssl_user_id'] . "</ssl_user_id>";
-  $xmldata .= "<ssl_pin>" . $info['ssl_pin'] . "</ssl_pin>";
-  $xmldata .= "<ssl_test_mode>false</ssl_test_mode>";
-  $xmldata .= "<ssl_transaction_type>ccsale</ssl_transaction_type>";
-  $xmldata .= "<ssl_cvv2cvc2>" . $info['CVNum'] . "</ssl_cvv2cvc2>";
-  $xmldata .= "<ssl_card_number>" . $info['ssl_card_number'] . "</ssl_card_number>";
-  $xmldata .= "<ssl_exp_date>" . $info['ssl_exp_date'] . "</ssl_exp_date>";
-  $xmldata .= "<ssl_invoice_number>" . $info['InvNum'] . "</ssl_invoice_number>";
-  $xmldata .= "<ssl_amount>" . $info['ssl_amount'] . "</ssl_amount>";
-  $xmldata .= "<ssl_avs_address>" . $info['ssl_avs_address'] . "</ssl_avs_address>";
-  $xmldata .= "<ssl_avs_zip>" . $info['ssl_avs_zip'] . "</ssl_avs_zip>";
-  $xmldata .= "<ssl_first_name>" . $info['ssl_first_name'] . "</ssl_first_name>";
-  $xmldata .= "<ssl_last_name>" . $info['ssl_last_name'] . "</ssl_last_name>";
-  $xmldata .= "<ssl_salestax>" . $info['ssl_salestax'] . "</ssl_salestax></txn>";
+  $xmldata = 'xmldata=<txn>';
 
+  foreach ($info as $key => $value) {
+    // Keep keys starting by ssl_.
+    if (strpos($key, 'ssl_') !== 0) {
+      continue;
+    }
+    $sanitized_key = check_plain($key);
+    $xmldata .= '<' . $sanitized_key . '>' . check_plain($value) . '</' . $sanitized_key . '>';
+  }
+
+  $xmldata .= '</txn>';
 
   // Setup the cURL request.
   $ch = curl_init();
