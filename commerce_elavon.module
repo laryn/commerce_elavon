@@ -185,6 +185,16 @@ function commerce_elavon_base_settings_form($settings) {
     ),
     '#default_value' => $settings['txn_mode'],
   );
+  $form['txn_type'] = array(
+    '#type' => 'radios',
+    '#title' => t('Default credit card transaction type'),
+    '#description' => t('The default will be used to process transactions during checkout.'),
+    '#options' => array(
+      COMMERCE_CREDIT_AUTH_CAPTURE => t('Authorization and capture'),
+      COMMERCE_CREDIT_AUTH_ONLY => t('Authorization only (requires manual or automated capture after checkout)'),
+    ),
+    '#default_value' => $settings['txn_type'],
+  );
 
   $form['log'] = array(
     '#type' => 'checkboxes',
@@ -338,11 +348,12 @@ function commerce_elavon_transaction_process($payment_method, $info, $order, $ch
   }
   $ssl_salestax = commerce_currency_amount_to_decimal($sales_tax_total, $charge['currency_code']);
 
+  $auth_only = $payment_method['settings']['txn_type'] === COMMERCE_CREDIT_AUTH_ONLY;
   // Prepare the billing information.
   $billing_data = commerce_elavon_get_billing_info($order);
   // Build a name-value pair array for this transaction.
   $info += array(
-    'ssl_amount' => commerce_currency_amount_to_decimal($charge['amount'], $charge['currency_code']),
+    'ssl_amount' =>  number_format(commerce_currency_amount_to_decimal($charge['amount'], $charge['currency_code']), 2, '.', ''),
     'ssl_avs_address' => $billing_data['street'],
     'ssl_avs_zip' => $billing_data['zip'],
     'ssl_first_name' => $billing_data['first_name'],
@@ -356,6 +367,11 @@ function commerce_elavon_transaction_process($payment_method, $info, $order, $ch
     'Zip' => $billing_data['zip'],
     'ExtData' => $billing_data['ext_data'],
   );
+
+  if ($auth_only) {
+    $info['ssl_transaction_type'] = 'ccauthonly';
+  }
+
   // Submit the request to Elavon.
   $response = commerce_elavon_request($payment_method, $info);
 
@@ -394,7 +410,7 @@ function commerce_elavon_transaction_process($payment_method, $info, $order, $ch
   $transaction->message = implode('<br />', commerce_elavon_get_log_message($response, ELAVON_TXN_TYPE_DIRECT_CAPTURE));
   // Set the transaction status based on the type of transaction this was.
   if ($response['status']) {
-    $transaction->status = COMMERCE_PAYMENT_STATUS_SUCCESS;
+    $transaction->status = $auth_only ? COMMERCE_PAYMENT_STATUS_PENDING : COMMERCE_PAYMENT_STATUS_SUCCESS;
   }
   else {
     $transaction->status = COMMERCE_PAYMENT_STATUS_FAILURE;
