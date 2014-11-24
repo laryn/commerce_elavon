@@ -188,3 +188,59 @@ function commerce_elavon_direct_refund_form_submit($form, &$form_state) {
   }
   $form_state['redirect'] = 'admin/commerce/orders/' . $order->order_id . '/payment';
 }
+
+/**
+ * Form callback: allows the user to issue a ccdelete on a prior transaction.
+ */
+function commerce_elavon_direct_delete_form($form, &$form_state, $order, $transaction) {
+  $form_state['order'] = $order;
+  $form_state['transaction'] = $transaction;
+
+  $form['help'] = array(
+    '#markup' => t('The ccdelete is a transaction that deletes and attempts a reversal on a Sale or Auth Only Credit transaction.'),
+  );
+  $form['help']['#markup'] .= ' ' . t('A transaction that has been deleted from the batch cannot be recovered.');
+  // Load and store the payment method instance for this transaction.
+  $payment_method = commerce_payment_method_instance_load($transaction->instance_id);
+  $form_state['payment_method'] = $payment_method;
+
+  $form = confirm_form($form,
+    t('Are you sure you want to perform a ccdelete on that transaction?'),
+    'admin/commerce/orders/' . $order->order_id . '/payment',
+    '',
+    t('Confirm'),
+    t('Cancel'),
+    'confirm'
+  );
+
+  return $form;
+}
+
+/**
+ * Submit handler: process a ccdelete via Elavon direct.
+ */
+function commerce_elavon_direct_delete_form_submit($form, &$form_state) {
+  $transaction = $form_state['transaction'];
+  $order = $form_state['order'];
+  $payment_method = $form_state['payment_method'];
+
+  $info = array(
+    'ssl_transaction_type' => 'ccdelete',
+    'ssl_txn_id' => $transaction->remote_id,
+  );
+  $response = commerce_elavon_request($payment_method, $info);
+  $transaction->payload[REQUEST_TIME] = isset($response['xml']) ? $response['xml']->asXML() : '';
+  $transaction->remote_status = $response['status'];
+
+  if ($response['status']) {
+    drupal_set_message(t('ccdelete issued successfully'));
+    $transaction->status = COMMERCE_PAYMENT_STATUS_FAILURE;
+    $transaction->message .= '<br />' . t('Ccdelete performed: @date', array('@date' => format_date(REQUEST_TIME, 'short')));
+  }
+  else {
+    drupal_set_message(t('ccdelete failed: @reason', array('@reason' => (string) $response['xml']->errorMessage)), 'error');
+  }
+
+  commerce_payment_transaction_save($transaction);
+  $form_state['redirect'] = 'admin/commerce/orders/' . $order->order_id . '/payment';
+}
