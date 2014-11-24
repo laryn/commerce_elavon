@@ -8,23 +8,7 @@
 // Elavon transaction mode definitions:
 define('ELAVON_TXN_MODE_PRODUCTION', 'production');
 define('ELAVON_TXN_MODE_TEST', 'test');
-define('ELAVON_PAYMENT_STATUS_CANCELED', 'canceled');
 define('ELAVON_TXN_TYPE_DIRECT_CAPTURE', 'direct_capture');
-
-/**
- * Implements hook_commerce_payment_transaction_status_info().
- */
-function commerce_elavon_commerce_payment_transaction_status_info() {
-  $statuses = array();
-
-  $statuses[ELAVON_PAYMENT_STATUS_CANCELED] = array(
-    'status' => ELAVON_PAYMENT_STATUS_CANCELED,
-    'title' => t('Canceled'),
-    'total' => FALSE,
-  );
-
-  return $statuses;
-}
 
 /**
  * Implements hook_menu().
@@ -82,7 +66,7 @@ function commerce_elavon_menu() {
  *   TRUE or FALSE indicating refund access.
  */
 function commerce_elavon_capture_access($transaction) {
-  if (empty($transaction->remote_id) || $transaction->remote_status == 'Fail' || $transaction->status != COMMERCE_PAYMENT_STATUS_PENDING) {
+  if (empty($transaction->remote_id) || $transaction->status != COMMERCE_PAYMENT_STATUS_PENDING) {
     return FALSE;
   }
   // Return FALSE if it is more than 10 days past the original authorization.
@@ -104,7 +88,7 @@ function commerce_elavon_capture_access($transaction) {
  *   TRUE or FALSE indicating refund access.
  */
 function commerce_elavon_direct_refund_access($transaction) {
-  if (empty($transaction->remote_id) || $transaction->remote_status == 'Fail' || $transaction->status != COMMERCE_PAYMENT_STATUS_SUCCESS) {
+  if (empty($transaction->remote_id) || $transaction->status != COMMERCE_PAYMENT_STATUS_SUCCESS) {
     return FALSE;
   }
 
@@ -161,10 +145,7 @@ function commerce_elavon_default_settings() {
     'pin' => '',
     'txn_mode' => ELAVON_TXN_MODE_TEST,
     'txn_type' => COMMERCE_CREDIT_AUTH_CAPTURE,
-    'vendor_number' => '',
     'log' => array('request' => '0', 'response' => '0'),
-    'failure_interval' => '',
-    'max_failures' => '',
     'cardonfile' => FALSE,
   );
 }
@@ -327,11 +308,9 @@ function commerce_elavon_direct_submit_form_submit($payment_method, $pane_form, 
     !empty($pane_values['credit_card']['cardonfile_store']) && $pane_values['credit_card']['cardonfile_store']) {
 
     // Tell Elavon we want to generate a token.
-    // Note: We should also be able to store it in the card manager but during
-    // my tests, it wasn't working, in order to do that, we should send
-    // ssl_add_token => Y.
     $info += array(
       'ssl_get_token' => 'Y',
+      'ssl_add_token' => 'Y',
       'cardonfile_instance_default' => $pane_values['cardonfile_instance_default'],
     );
   }
@@ -361,7 +340,7 @@ function commerce_elavon_direct_cardonfile_charge($payment_method, $card_data, $
   }
   $info = array(
     'ssl_token' => $card_data->remote_id,
-    'ssl_exp_date' => $card_data->card_exp_month . substr($card_data->card_exp_year, 2, 2),
+    'ssl_exp_date' => str_pad($card_data->card_exp_month, 2, '0', STR_PAD_LEFT) . substr($card_data->card_exp_year, 2, 2),
   );
 
   return commerce_elavon_transaction_process($payment_method, $info, $order, $charge);
@@ -395,12 +374,6 @@ function commerce_elavon_transaction_process($payment_method, $info, $order, $ch
     'ssl_last_name' => $billing_data['last_name'],
     'ssl_salestax' => $ssl_salestax,
     'ssl_invoice_number' => $order->order_number,
-    // The 4 following items elements are not sent to Elavon, they are kept
-    // most probably because other modules are using them.
-    'NameOnCard' => $billing_data['name_on_card'],
-    'Street' => $billing_data['street'],
-    'Zip' => $billing_data['zip'],
-    'ExtData' => $billing_data['ext_data'],
   );
 
   if ($auth_only) {
@@ -421,7 +394,7 @@ function commerce_elavon_transaction_process($payment_method, $info, $order, $ch
       $card_data->instance_id = $payment_method['instance_id'];
       $card_data->remote_id = (string) $response['xml']->ssl_token;
       $card_data->card_type = !empty($card_type) ? $card_type : 'card';
-      $card_data->card_name = !empty($billing_data['name_on_card']) ? $billing_data['name_on_card'] : '';
+      $card_data->card_name = !empty($billing_address['name_on_card']) ? $billing_address['name_on_card'] : '';
       $card_data->card_number = substr($info['ssl_card_number'], -4);
       $card_data->card_exp_month = $info['card_exp_month'];
       $card_data->card_exp_year = $info['card_exp_year'];
@@ -490,7 +463,6 @@ function commerce_elavon_get_log_message($response, $type) {
  */
 function commerce_elavon_get_billing_info($order) {
   $billing_data = array(
-    'ext_data' => '',
     'street' => '',
     'street2' => '',
     'city' => '',
@@ -504,47 +476,23 @@ function commerce_elavon_get_billing_info($order) {
 
   $order_wrapper = entity_metadata_wrapper('commerce_order', $order);
   if ($order_wrapper->commerce_customer_billing->value()) {
-    $ext_data = '';
     $billing_address = $order_wrapper->commerce_customer_billing->commerce_customer_address->value();
 
     if (empty($billing_address['first_name'])) {
-      $name_parts = explode(' ', $billing_address['name_line']);
-      $billing_address['first_name'] = array_shift($name_parts);
-      $billing_address['last_name'] = implode(' ', $name_parts);
+      $name_parts = explode(' ', $billing_address['name_line'], 2);
+      $billing_address['first_name'] = $name_parts[0];
+      $billing_address['last_name'] = $name_parts[1];
     }
-    // Build and populate the API request SimpleXML element.
-    $ext_data .= '<CustomerID>' . substr($order->uid, 0, 20) . '</CustomerID>';
-    // Customer Billing Address.
-    $ext_data .= '<Invoice><BillTo>';
-    $name_on_card = substr($billing_address['first_name'], 0, 50) . ' ' . substr($billing_address['last_name'], 0, 50);
 
-    // Use company name as billing name when available.
-    if (!empty($billing_address['organisation_name'])) {
-      $ext_data .= '<Name>' . substr($billing_address['organisation_name'], 0, 50) . '</Name>';
-    }
-    else {
-      $ext_data .= '<Name>' . $name_on_card . '</Name>';
-    }
-    $ext_data .= '<Email>' . substr($order->mail, 0, 255) . '</Email>';
-    $ext_data .= '<Address>';
-    $ext_data .= '<Street>' . substr($billing_address['thoroughfare'], 0, 60) . '</Street>';
-    $ext_data .= '<City>' . substr($billing_address['locality'], 0, 40) . '</City>';
-    $ext_data .= '<State>' . substr($billing_address['administrative_area'], 0, 40) . '</State>';
-    $ext_data .= '<Zip>' . substr($billing_address['postal_code'], 0, 20) . '</Zip>';
-    $ext_data .= '<Country>' . $billing_address['country'] . '</Country>';
-    $ext_data .= '</Address>';
-    $ext_data .= '</BillTo></Invoice>';
-
-    $billing_data['ext_data'] = $ext_data;
     $billing_data['street'] = substr($billing_address['thoroughfare'], 0, 30);
     $billing_data['street2'] = substr($billing_address['premise'], 0, 30);
     $billing_data['city'] = substr($billing_address['locality'], 0, 30);
     $billing_data['state'] = substr($billing_address['administrative_area'], 0, 30);
     $billing_data['zip'] = substr($billing_address['postal_code'], 0, 9);
     $billing_data['country'] = $billing_address['country'];
-    $billing_data['name_on_card'] = $name_on_card;
     $billing_data['first_name'] = $billing_address['first_name'];
     $billing_data['last_name'] = $billing_address['last_name'];
+    $billing_data['name_on_card'] = substr($billing_address['first_name'], 0, 50) . ' ' . substr($billing_address['last_name'], 0, 50);
   }
 
   return $billing_data;
@@ -603,10 +551,6 @@ function commerce_elavon_request($payment_method, $info = array()) {
       $log_nvp['ssl_card_number'] = str_repeat('X', strlen($log_nvp['ssl_card_number']) - 4) . substr($log_nvp['ssl_card_number'], -4);
     }
 
-    if (!empty($log_nvp['CcAccountNum'])) {
-      $log_nvp['CcAccountNum'] = str_repeat('X', strlen($log_nvp['CcAccountNum']) - 4) . substr($log_nvp['CcAccountNum'], -4);
-    }
-
     if (!empty($log_nvp['ssl_cvv2cvc2'])) {
       $log_nvp['ssl_cvv2cvc2'] = str_repeat('X', strlen($log_nvp['ssl_cvv2cvc2']));
     }
@@ -633,7 +577,7 @@ function commerce_elavon_request($payment_method, $info = array()) {
   curl_setopt($ch, CURLOPT_URL, $url);
   curl_setopt($ch, CURLOPT_VERBOSE, 0);
   curl_setopt($ch, CURLOPT_POST, 1);
-  curl_setopt($ch, CURLOPT_POSTFIELDS, "$xmldata");
+  curl_setopt($ch, CURLOPT_POSTFIELDS, $xmldata);
   curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
   curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
   curl_setopt($ch, CURLOPT_NOPROGRESS, 1);
