@@ -27,7 +27,7 @@ function commerce_elavon_capture_form($form, &$form_state, $order, $transaction)
   }
 
   // Convert the price amount to a user friendly decimal value.
-  $default_amount = commerce_currency_amount_to_decimal($default_amount, $transaction->currency_code);
+  $default_amount = number_format(commerce_currency_amount_to_decimal($default_amount, $transaction->currency_code), 2, '.', '');
 
   $description = implode('<br />', array(
     t('Authorization: @amount', array('@amount' => commerce_currency_format($transaction->amount, $transaction->currency_code))),
@@ -73,8 +73,8 @@ function commerce_elavon_capture_form_validate($form, &$form_state) {
   }
 
   // If the authorization has expired, display an error message and redirect.
-  if (time() - $transaction->created > 86400 * 30) {
-    drupal_set_message(t('This authorization has passed its 30 day limit cannot be captured.'), 'error');
+  if (time() - $transaction->created > 86400 * 10) {
+    drupal_set_message(t('This authorization has passed its 10 days limit cannot be captured.'), 'error');
     drupal_goto('admin/commerce/orders/' . $form_state['order']->order_id . '/payment');
   }
 }
@@ -84,11 +84,33 @@ function commerce_elavon_capture_form_validate($form, &$form_state) {
  */
 function commerce_elavon_capture_form_submit($form, &$form_state) {
   $transaction = $form_state['transaction'];
-  $amount = $form_state['values']['amount'];
+  $amount = number_format($form_state['values']['amount'], 2, '.', '');
   $payment_method = $form_state['payment_method'];
-  // Send request to Elavon.
-  $result = commerce_elavon_transaction_request($transaction, $payment_method, $amount, 'Force');
-  $form_state['redirect'] = 'admin/commerce/orders/' . $form_state['order']->order_id . '/payment';
+  $order = $form_state['order'];
+  $info = array(
+    'ssl_transaction_type' => 'cccomplete',
+    'ssl_txn_id' => $transaction->remote_id,
+    'ssl_amount' => $amount,
+  );
+  $response = commerce_elavon_request($payment_method, $info);
+  $transaction->payload[REQUEST_TIME] = isset($response['xml']) ? $response['xml']->asXML() : '';
+  $transaction->remote_status = $response['status'];
+
+  if ($response['status']) {
+    drupal_set_message(t('Prior authorization captured successfully.'));
+
+    // Update the transaction amount to the actual capture amount.
+    $transaction->amount = commerce_currency_decimal_to_amount($amount, $transaction->currency_code);
+    $transaction->status = COMMERCE_PAYMENT_STATUS_SUCCESS;
+    $transaction->message .= '<br />' . t('Captured: @date', array('@date' => format_date(REQUEST_TIME, 'short')));
+  }
+  else {
+    drupal_set_message(t('Prior authorization capture failed, so the transaction will remain in a pending status.'), 'error');
+    drupal_set_message(check_plain((string) $response['xml']->errorMessage), 'error');
+  }
+
+  commerce_payment_transaction_save($transaction);
+  $form_state['redirect'] = 'admin/commerce/orders/' . $order->order_id . '/payment';
 }
 
 /**

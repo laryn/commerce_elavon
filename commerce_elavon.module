@@ -38,7 +38,7 @@ function commerce_elavon_menu() {
     'page callback' => 'drupal_get_form',
     'page arguments' => array('commerce_elavon_capture_form', 3, 5),
     'access callback' => 'commerce_elavon_capture_access',
-    'access arguments' => array(3, 5),
+    'access arguments' => array(5),
     'type' => MENU_DEFAULT_LOCAL_TASK,
     'context' => MENU_CONTEXT_INLINE,
     'weight' => 2,
@@ -72,21 +72,27 @@ function commerce_elavon_menu() {
 }
 
 /**
- * Implement call back function commerce_elavon_capture_access().
+ * Determines access to the capture form for Elavon direct credit card
+ * transactions.
+ *
+ * @param $transaction
+ *   The payment transaction object to be captured.
+ *
+ * @return bool
+ *   TRUE or FALSE indicating refund access.
  */
-function commerce_elavon_capture_access($order, $transaction) {
-  // Return FALSE if the transaction isn't for Elavon or isn't awaiting capture.
-  if ($transaction->remote_status == 'Fail' || $transaction->status != COMMERCE_PAYMENT_STATUS_PENDING) {
+function commerce_elavon_capture_access($transaction) {
+  if (empty($transaction->remote_id) || $transaction->remote_status == 'Fail' || $transaction->status != COMMERCE_PAYMENT_STATUS_PENDING) {
     return FALSE;
   }
-  // TODO: Check if this is relevant to elavon.
-  // Return FALSE if it is more than 30 days past the original authorization.
-  if (time() - $transaction->created > 86400 * 30) {
+  // Return FALSE if it is more than 10 days past the original authorization.
+  if (time() - $transaction->created > 86400 * 10) {
     return FALSE;
   }
   // Allow access if the user can update payments on this transaction.
   return commerce_payment_transaction_access('update', $transaction);
 }
+
 /**
  * Determines access to the refund form for Elavon direct credit card
  * transactions.
@@ -375,7 +381,7 @@ function commerce_elavon_transaction_process($payment_method, $info, $order, $ch
       $sales_tax_total += $order_working_array_element['price']['amount'];
     }
   }
-  $ssl_salestax = commerce_currency_amount_to_decimal($sales_tax_total, $charge['currency_code']);
+  $ssl_salestax = number_format(commerce_currency_amount_to_decimal($sales_tax_total, $charge['currency_code']), 2, '.', '');
 
   $auth_only = $payment_method['settings']['txn_type'] === COMMERCE_CREDIT_AUTH_ONLY;
   // Prepare the billing information.
