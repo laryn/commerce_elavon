@@ -94,7 +94,7 @@ function commerce_elavon_capture_form_submit($form, &$form_state) {
   );
   $response = commerce_elavon_request($payment_method, $info);
   $transaction->payload[REQUEST_TIME] = isset($response['xml']) ? $response['xml']->asXML() : '';
-  $transaction->remote_status = $response['status'];
+  $transaction->remote_status = $response['msg'];
 
   if ($response['status']) {
     drupal_set_message(t('Prior authorization captured successfully.'));
@@ -193,7 +193,7 @@ function commerce_elavon_direct_refund_form_submit($form, &$form_state) {
     $refund_transaction->currency_code = $transaction->currency_code;
     $refund_transaction->payload[REQUEST_TIME] = isset($response['xml']) ? $response['xml']->asXML() : '';
     $refund_transaction->status = COMMERCE_PAYMENT_STATUS_SUCCESS;
-    $refund_transaction->remote_status = $response['status'];
+    $refund_transaction->remote_status = $response['msg'];
     $refund_transaction->message = t('Refunded to @remote_id.', array('@remote_id' => $transaction->remote_id));
 
     // Save the refund transaction.
@@ -252,7 +252,7 @@ function commerce_elavon_direct_delete_form_submit($form, &$form_state) {
   );
   $response = commerce_elavon_request($payment_method, $info);
   $transaction->payload[REQUEST_TIME] = isset($response['xml']) ? $response['xml']->asXML() : '';
-  $transaction->remote_status = $response['status'];
+  $transaction->remote_status = $response['msg'];
 
   if ($response['status']) {
     drupal_set_message(t('ccdelete issued successfully'));

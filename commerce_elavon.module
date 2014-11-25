@@ -149,6 +149,7 @@ function commerce_elavon_default_settings() {
     'txn_type' => COMMERCE_CREDIT_AUTH_CAPTURE,
     'log' => array('request' => '0', 'response' => '0'),
     'cardonfile' => FALSE,
+    'multicurrency' => FALSE,
   );
 }
 
@@ -221,6 +222,13 @@ function commerce_elavon_base_settings_form($settings) {
       'response' => t('API response messages'),
     ),
     '#default_value' => $settings['log'],
+  );
+
+  $form['multicurrency'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Multi-Currency support'),
+    '#description' => t('Use only with a terminal that is setup with Multi-Currency.'),
+    '#default_value' => $settings['multicurrency'],
   );
 
   if (module_exists('commerce_cardonfile')) {
@@ -413,12 +421,18 @@ function commerce_elavon_transaction_process($payment_method, $info, $order, $ch
   $info += array(
     'ssl_amount' => number_format(commerce_currency_amount_to_decimal($charge['amount'], $charge['currency_code']), 2, '.', ''),
     'ssl_avs_address' => $billing_data['street'],
+    'ssl_address2' => $billing_data['street2'],
+    'ssl_city' => $billing_data['city'],
+    'ssl_state' => $billing_data['state'],
     'ssl_avs_zip' => $billing_data['zip'],
     'ssl_first_name' => $billing_data['first_name'],
     'ssl_last_name' => $billing_data['last_name'],
     'ssl_salestax' => $ssl_salestax,
     'ssl_invoice_number' => $order->order_number,
   );
+  if (!empty($payment_method['settings']['multicurrency'])) {
+    $info['ssl_transaction_currency'] = $charge['currency_code'];
+  }
 
   if ($auth_only) {
     $info['ssl_transaction_type'] = 'ccauthonly';
@@ -458,7 +472,7 @@ function commerce_elavon_transaction_process($payment_method, $info, $order, $ch
   $transaction->currency_code = $charge['currency_code'];
   $transaction->payload[REQUEST_TIME] = isset($response['xml']) ? $response['xml']->asXML() : '';
   // Store the Message of transaction in the remote status.
-  $transaction->remote_status = $response['status'];
+  $transaction->remote_status = $response['msg'];
   $transaction->message = implode('<br />', commerce_elavon_get_log_message($response, ELAVON_TXN_TYPE_DIRECT_CAPTURE));
   // Set the transaction status based on the type of transaction this was.
   if ($response['status']) {
@@ -467,10 +481,6 @@ function commerce_elavon_transaction_process($payment_method, $info, $order, $ch
   else {
     $transaction->status = COMMERCE_PAYMENT_STATUS_FAILURE;
   }
-  // If we didn't get an approval response code.
-  // Create a failed transaction with the error message.
-  // Save auth code.
-  $transaction->data['auth_code'][] = isset($response['xml']) && isset($response['xml']->AuthCode) ? (string) $response['xml']->AuthCode : '';
   // Save the transaction information.
   commerce_payment_transaction_save($transaction);
 
@@ -503,7 +513,7 @@ function commerce_elavon_get_log_message($response, $type) {
 }
 
 /**
- * Prepare ExtData XML element.
+ * Prepare the billing information.
  */
 function commerce_elavon_get_billing_info($order) {
   $billing_data = array(
@@ -654,7 +664,7 @@ function commerce_elavon_request($payment_method, $info = array()) {
 
     $response['status'] = ((string) $xml->ssl_result_message === 'APPROVAL') ? TRUE : FALSE;
     $response['msg'] = (string) $xml->ssl_result_message;
-    // Request approved, Save original xml responce with all data.
+    // Request approved, Save original xml response containing all the data.
     $response['xml'] = $xml;
   }
   return $response;
@@ -662,73 +672,92 @@ function commerce_elavon_request($payment_method, $info = array()) {
 
 /**
  * Returns the message text for an AVS response code.
- *
- * @see AVS Response Codes (Transaction API Guide)
  */
 function commerce_elavon_avs_response($code) {
   switch ($code) {
     case 'A':
-      return t('Address: Address matches, Zip does not');
-    case 'B':
-      return t('Street Match: Street addresses match for international transaction, but postal code doesn’t');
-    case 'C':
-      return t('Street Address: Street addresses and postal code not verified for international transaction');
-    case 'D':
-      return t('Match: Street addresses and postal codes match for international transaction');
-    case 'E':
-      return t('Error: Transaction unintelligible for AVS or edit error found in the message that prevents AVS from being performed');
-    case 'G':
-      return t('Unavailable: Address information not available for international transaction');
-    case 'I':
-      return t('Not Verified: Address Information not verified for International transaction');
-    case 'M':
-      return t('Match: Street addresses and postal codes match for international transaction');
-    case 'N':
-      return t('No: Neither address nor Zip matches');
-    case 'P':
-      return t('Postal Match: Postal codes match for international transaction, but street address doesn’t');
-    case 'R':
-      return t('Retry: System unavailable or time-out');
-    case 'S':
-      return t('Not Supported: Issuer doesn’t support AVS service');
-    case 'U':
-      return t('Unavailable: Address information not available');
-    case 'W':
-      return t('Whole Zip: 9-digit Zip matches, address doesn’t');
-    case 'X':
-      return t('Exact: Address and nine-digit Zip match');
-    case 'Y':
-      return t('Yes: Address and five-digit Zip match');
-    case 'Z':
-      return t('Whole Zip: 9-digit Zip matches, address doesn’t');
-    case '0':
-      return t('No response sent');
-    case '5':
-      return t('Invalid AVS response');
-  }
+      return t('Address matches - ZIP Code does not');
 
-  return '-';
+    case 'B':
+      return t('Street address match, Postal code in wrong format (international issuer)');
+
+    case 'C':
+      return t('Street address and postal code in wrong formats');
+
+    case 'D':
+      return t('Street address and postal code match (international issuer)');
+
+    case 'E':
+      return t('AVS Error');
+
+    case 'F':
+      return t('Address does compare and five-digit ZIP code does compare (UK only)');
+
+    case 'G':
+      return t('Service not supported by non-US issuer');
+
+    case 'I':
+      return t('Address information not verified by international issuer');
+
+    case 'M':
+      return t('Street Address and Postal code match (international issuer)');
+
+    case 'N':
+      return t('No Match on Address (Street) or ZIP');
+
+    case 'O':
+      return t('No Response sent');
+
+    case 'P':
+      return t('Postal codes match, Street address not verified due to incompatible formats');
+
+    case 'R':
+      return t('Retry, System unavailable or Timed out');
+
+    case 'S':
+      return t('Service not supported by issuer');
+
+    case 'U':
+      return t('Address information is unavailable');
+
+    case 'W':
+      return t('9-digit ZIP matches, Address (Street) does not');
+
+    case 'X':
+      return t('Exact AVS Match');
+
+    case 'Y':
+      return t('Address (Street) and 5-digit ZIP match');
+
+    case 'Z':
+      return t('5-digit ZIP matches, Address (Street) does not');
+
+    default:
+      return '-';
+  }
 }
 
 /**
  * Returns the message text for a CVV match.
- *
- * @see CVV Response Codes (Transaction API Guide)
  */
 function commerce_elavon_cvv_response($code) {
   switch ($code) {
     case 'M':
-      return t('CVV2/CVC2/CID Match');
+      return t('CVV2/CVC2 Match');
+
     case 'N':
-      return t('CVV2/CVC2/CID No Match');
+      return t('CVV2/CVC2 No match');
+
     case 'P':
       return t('Not Processed');
+
     case 'S':
-      return t('Issuer indicates that the CV data should be present on the card, but the merchant has indicated that the CV data is not present on the card.');
+      return t('Issuer indicates that the CVV2/CVC2 data should be present on the card, but the merchant has indicated that the CVV2/CVC2 data is not resent on the card');
+
     case 'U':
-      return t('Unknown / Issuer has not certified for CV or issuer has not provided Visa/MasterCard with the CV encryption keys.');
-    case 'X':
-      return t('Server Provider did not respond');
+      return t('Issuer has not certified for CVV2/CVC2 or Issuer has not provided Visa with the CVV2/CVC2 encryption keys');
+
+    default:
+      return '-';
   }
-  return '-';
 }
