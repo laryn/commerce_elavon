@@ -41,10 +41,21 @@ function commerce_elavon_menu() {
     'file' => 'includes/commerce_elavon.admin.inc',
   );
   $items['admin/commerce/orders/%commerce_order/payment/%commerce_payment_transaction/elavon-direct-delete'] = array(
-    'title' => 'ccdelete',
+    'title' => 'Cancel transaction',
     'page callback' => 'drupal_get_form',
     'page arguments' => array('commerce_elavon_direct_delete_form', 3, 5),
     'access callback' => 'commerce_elavon_direct_delete_access',
+    'access arguments' => array(5),
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'context' => MENU_CONTEXT_INLINE,
+    'weight' => 2,
+    'file' => 'includes/commerce_elavon.admin.inc',
+  );
+  $items['admin/commerce/orders/%commerce_order/payment/%commerce_payment_transaction/elavon-direct-void'] = array(
+    'title' => 'Void',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('commerce_elavon_direct_void_form', 3, 5),
+    'access callback' => 'commerce_elavon_direct_void_access',
     'access arguments' => array(5),
     'type' => MENU_DEFAULT_LOCAL_TASK,
     'context' => MENU_CONTEXT_INLINE,
@@ -108,6 +119,31 @@ function commerce_elavon_direct_refund_access($transaction) {
  */
 function commerce_elavon_direct_delete_access($transaction) {
   if (empty($transaction->remote_id) || $transaction->status != COMMERCE_PAYMENT_STATUS_PENDING) {
+    return FALSE;
+  }
+
+  // Allow access if the user can update payments on this transaction.
+  return commerce_payment_transaction_access('update', $transaction);
+}
+
+/**
+ * Determines access to the void form for Elavon direct credit card
+ * transactions.
+ *
+ * @param $transaction
+ *   The payment transaction object to be captured.
+ *
+ * @return bool
+ *   TRUE or FALSE indicating delete access.
+ */
+function commerce_elavon_direct_void_access($transaction) {
+  if (empty($transaction->remote_id) || $transaction->status != COMMERCE_PAYMENT_STATUS_SUCCESS) {
+    return FALSE;
+  }
+
+  // The void seems to be possible during a short amount of time, before the
+  // batch is settled, this usually means less than a day.
+  if (time() - $transaction->changed > 86400) {
     return FALSE;
   }
 

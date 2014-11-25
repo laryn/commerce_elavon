@@ -266,3 +266,59 @@ function commerce_elavon_direct_delete_form_submit($form, &$form_state) {
   commerce_payment_transaction_save($transaction);
   $form_state['redirect'] = 'admin/commerce/orders/' . $order->order_id . '/payment';
 }
+
+/**
+ * Form callback: allows the user to issue a ccvoid on a prior transaction.
+ */
+function commerce_elavon_direct_void_form($form, &$form_state, $order, $transaction) {
+  $form_state['order'] = $order;
+  $form_state['transaction'] = $transaction;
+
+  // Load and store the payment method instance for this transaction.
+  $payment_method = commerce_payment_method_instance_load($transaction->instance_id);
+  $form_state['payment_method'] = $payment_method;
+
+  $form['markup'] = array(
+    '#markup' => t('Are you sure that you want to void this transaction?'),
+  );
+
+  $form = confirm_form($form,
+    t('Are you sure that you want to void this transaction?'),
+    'admin/commerce/orders/' . $order->order_id . '/payment',
+    '',
+    t('Void'),
+    t('Cancel'),
+    'confirm'
+  );
+
+  return $form;
+}
+
+/**
+ * Submit handler: process a void via Elavon direct.
+ */
+function commerce_elavon_direct_void_form_submit($form, &$form_state) {
+  $transaction = $form_state['transaction'];
+  $order = $form_state['order'];
+  $payment_method = $form_state['payment_method'];
+
+  $info = array(
+    'ssl_transaction_type' => 'ccvoid',
+    'ssl_txn_id' => $transaction->remote_id,
+  );
+  $response = commerce_elavon_request($payment_method, $info);
+  $transaction->payload[REQUEST_TIME] = isset($response['xml']) ? $response['xml']->asXML() : '';
+  $transaction->remote_status = $response['msg'];
+
+  if ($response['status']) {
+    drupal_set_message(t('Transaction successfully voided.'));
+    $transaction->status = COMMERCE_PAYMENT_STATUS_FAILURE;
+    $transaction->message .= '<br />' . t('Voided: @date', array('@date' => format_date(REQUEST_TIME, 'short')));
+  }
+  else {
+    drupal_set_message(t('Void failed: @reason', array('@reason' => (string) $response['xml']->errorMessage)), 'error');
+  }
+
+  commerce_payment_transaction_save($transaction);
+  $form_state['redirect'] = 'admin/commerce/orders/' . $order->order_id . '/payment';
+}
