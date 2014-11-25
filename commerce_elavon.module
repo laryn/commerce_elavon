@@ -129,6 +129,8 @@ function commerce_elavon_commerce_payment_method_info() {
     'description' => t('Integrates Elavon direct processing payment, direct or delayed capture '),
     'cardonfile' => array(
       'charge callback' => 'commerce_elavon_direct_cardonfile_charge',
+      'update callback' => 'commerce_elavon_direct_cardonfile_update',
+      'delete callback' => 'commerce_elavon_direct_cardonfile_delete',
     ),
   );
 
@@ -347,6 +349,48 @@ function commerce_elavon_direct_cardonfile_charge($payment_method, $card_data, $
 }
 
 /**
+ * Card on file callback: updated the card stored in the add to card manager.
+ */
+function commerce_elavon_direct_cardonfile_update($form, &$form_state, $payment_method, $card_data) {
+  $info = array(
+    'ssl_transaction_type' => 'ccupdatetoken',
+    'ssl_token' => $card_data->remote_id,
+    'ssl_exp_date' => str_pad($card_data->card_exp_month, 2, '0', STR_PAD_LEFT) . substr($card_data->card_exp_year, 2, 2),
+  );
+  list($first_name, $last_name) = explode(' ', $card_data->card_name, 2);
+  $info += array(
+    'ssl_first_name' => $first_name,
+    'ssl_last_name' => $last_name,
+  );
+
+  $response = commerce_elavon_request($payment_method, $info);
+
+  if (isset($response['xml']->ssl_token_response)) {
+    return ((string) $response['xml']->ssl_token_response === 'SUCCESS');
+  }
+
+  return FALSE;
+}
+
+/**
+ * Card on file callback: deletes the card stored in the add to card manager.
+ */
+function commerce_elavon_direct_cardonfile_delete($form, &$form_state, $payment_method, $card_data) {
+  $info = array(
+    'ssl_transaction_type' => 'ccdeletetoken',
+    'ssl_token' => $card_data->remote_id,
+  );
+
+  $response = commerce_elavon_request($payment_method, $info);
+
+  if (isset($response['xml']->ssl_token_response)) {
+    return ((string) $response['xml']->ssl_token_response === 'SUCCESS');
+  }
+
+  return FALSE;
+}
+
+/**
  * Proceed to the payment and record a transaction.
  */
 function commerce_elavon_transaction_process($payment_method, $info, $order, $charge) {
@@ -394,7 +438,7 @@ function commerce_elavon_transaction_process($payment_method, $info, $order, $ch
       $card_data->instance_id = $payment_method['instance_id'];
       $card_data->remote_id = (string) $response['xml']->ssl_token;
       $card_data->card_type = !empty($card_type) ? $card_type : 'card';
-      $card_data->card_name = !empty($billing_address['name_on_card']) ? $billing_address['name_on_card'] : '';
+      $card_data->card_name = !empty($billing_data['name_on_card']) ? $billing_data['name_on_card'] : '';
       $card_data->card_number = substr($info['ssl_card_number'], -4);
       $card_data->card_exp_month = $info['card_exp_month'];
       $card_data->card_exp_year = $info['card_exp_year'];
@@ -540,7 +584,7 @@ function commerce_elavon_request($payment_method, $info = array()) {
   drupal_alter('commerce_elavon_direct_request', $info);
 
   // Log the request if specified.
-  if ($payment_method['settings']['log']['request'] == 'request') {
+  if ($payment_method['settings']['log']['request'] === 'request') {
     // Mask the credit card number and CVV.
     $log_nvp = $info;
     $log_nvp['ssl_merchant_id'] = str_repeat('X', strlen($log_nvp['ssl_merchant_id']));
@@ -604,7 +648,7 @@ function commerce_elavon_request($payment_method, $info = array()) {
     $xml = new SimpleXMLElement($result);
     $response = array();
     // Log the API response if specified.
-    if ($payment_method['settings']['log']['response'] == 'response') {
+    if ($payment_method['settings']['log']['response'] === 'response') {
       watchdog('commerce_elavon', 'API response received:<pre>@xml</pre>', array('@xml' => $xml->asXML()));
     }
 
