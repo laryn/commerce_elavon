@@ -77,7 +77,7 @@ function commerce_elavon_menu() {
  *   TRUE or FALSE indicating refund access.
  */
 function commerce_elavon_capture_access($transaction) {
-  if (empty($transaction->remote_id) || $transaction->status != COMMERCE_PAYMENT_STATUS_PENDING) {
+  if ($transaction->payment_method != 'elavon_direct' || empty($transaction->remote_id) || $transaction->status != COMMERCE_PAYMENT_STATUS_PENDING) {
     return FALSE;
   }
   // Return FALSE if it is more than 10 days past the original authorization.
@@ -99,7 +99,12 @@ function commerce_elavon_capture_access($transaction) {
  *   TRUE or FALSE indicating refund access.
  */
 function commerce_elavon_direct_refund_access($transaction) {
-  if (empty($transaction->remote_id) || $transaction->status != COMMERCE_PAYMENT_STATUS_SUCCESS) {
+  if ($transaction->payment_method != 'elavon_direct' || empty($transaction->remote_id) || $transaction->status != COMMERCE_PAYMENT_STATUS_SUCCESS) {
+    return FALSE;
+  }
+
+  // Test if it's a refund.
+  if (strpos($transaction->amount, '-') === 0) {
     return FALSE;
   }
 
@@ -118,7 +123,7 @@ function commerce_elavon_direct_refund_access($transaction) {
  *   TRUE or FALSE indicating delete access.
  */
 function commerce_elavon_direct_delete_access($transaction) {
-  if (empty($transaction->remote_id) || $transaction->status != COMMERCE_PAYMENT_STATUS_PENDING) {
+  if ($transaction->payment_method != 'elavon_direct' || empty($transaction->remote_id) || $transaction->status != COMMERCE_PAYMENT_STATUS_PENDING) {
     return FALSE;
   }
 
@@ -137,7 +142,7 @@ function commerce_elavon_direct_delete_access($transaction) {
  *   TRUE or FALSE indicating delete access.
  */
 function commerce_elavon_direct_void_access($transaction) {
-  if (empty($transaction->remote_id) || $transaction->status != COMMERCE_PAYMENT_STATUS_SUCCESS) {
+  if ($transaction->payment_method != 'elavon_direct' || empty($transaction->remote_id) || $transaction->status != COMMERCE_PAYMENT_STATUS_SUCCESS) {
     return FALSE;
   }
 
