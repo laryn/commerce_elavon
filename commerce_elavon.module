@@ -170,6 +170,7 @@ function commerce_elavon_commerce_payment_method_info() {
     'description' => t('Integrates Elavon direct processing payment, direct or delayed capture '),
     'cardonfile' => array(
       'charge callback' => 'commerce_elavon_direct_cardonfile_charge',
+      'create callback' => 'commerce_elavon_direct_cardonfile_create',
       'update callback' => 'commerce_elavon_direct_cardonfile_update',
       'delete callback' => 'commerce_elavon_direct_cardonfile_delete',
     ),
@@ -395,6 +396,37 @@ function commerce_elavon_direct_cardonfile_charge($payment_method, $card_data, $
   );
 
   return commerce_elavon_transaction_process($payment_method, $info, $order, $charge);
+}
+
+/**
+ * Card on file callback: create and store the card in the card manager.
+ */
+function commerce_elavon_direct_cardonfile_create($form, &$form_state, $payment_method, $card_data) {
+  list($first_name, $last_name) = explode(' ', $card_data->card_name, 2);
+  $info = array(
+    'ssl_transaction_type' => 'ccgettoken',
+    'ssl_card_number' => $form_state['values']['credit_card']['number'],
+    'ssl_exp_date' => str_pad($card_data->card_exp_month, 2, '0', STR_PAD_LEFT) . substr($card_data->card_exp_year, 2, 2),
+    'ssl_cvv2cvc2' => $form_state['values']['credit_card']['code'],
+    'ssl_add_token' => 'Y',
+    'ssl_first_name' => $first_name,
+    'ssl_last_name' => $last_name,
+  );
+
+  $response = commerce_elavon_request($payment_method, $info);
+
+  if (
+    !empty($response['xml']->ssl_token_response)
+    && (string) $response['xml']->ssl_token_response === 'SUCCESS'
+    && !empty($response['xml']->ssl_add_token_response)
+    && (string) $response['xml']->ssl_add_token_response === 'Card Added'
+  ) {
+    $card_data->remote_id = (string) $response['xml']->ssl_token;
+    return $card_data;
+  }
+
+  drupal_set_message(t('There was an error adding this card. Please contact the site administrator for additional information.'), 'error');
+  return FALSE;
 }
 
 /**
