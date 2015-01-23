@@ -6,9 +6,9 @@
  */
 
 // Elavon transaction mode definitions:
-define('ELAVON_TXN_MODE_PRODUCTION', 'production');
-define('ELAVON_TXN_MODE_TEST', 'test');
-define('ELAVON_TXN_TYPE_DIRECT_CAPTURE', 'direct_capture');
+define('COMMERCE_ELAVON_TXN_MODE_PRODUCTION', 'production');
+define('COMMERCE_ELAVON_TXN_MODE_TEST', 'test');
+define('COMMERCE_ELAVON_TXN_TYPE_DIRECT_CAPTURE', 'direct_capture');
 
 /**
  * Implements hook_menu().
@@ -67,10 +67,9 @@ function commerce_elavon_menu() {
 }
 
 /**
- * Determines access to the capture form for Elavon direct credit card
- * transactions.
+ * Determines access to the capture form for direct credit card transactions.
  *
- * @param $transaction
+ * @param commerce_payment_transaction $transaction
  *   The payment transaction object to be captured.
  *
  * @return bool
@@ -89,10 +88,9 @@ function commerce_elavon_capture_access($transaction) {
 }
 
 /**
- * Determines access to the refund form for Elavon direct credit card
- * transactions.
+ * Determines access to the refund form for direct credit card transactions.
  *
- * @param $transaction
+ * @param commerce_payment_transaction $transaction
  *   The payment transaction object to be captured.
  *
  * @return bool
@@ -113,10 +111,9 @@ function commerce_elavon_direct_refund_access($transaction) {
 }
 
 /**
- * Determines access to the ccdelete form for Elavon direct credit card
- * transactions.
+ * Determines access to the ccdelete form for direct credit card transactions.
  *
- * @param $transaction
+ * @param commerce_payment_transaction $transaction
  *   The payment transaction object to be captured.
  *
  * @return bool
@@ -132,10 +129,9 @@ function commerce_elavon_direct_delete_access($transaction) {
 }
 
 /**
- * Determines access to the void form for Elavon direct credit card
- * transactions.
+ * Determines access to the void form for direct credit card transactions.
  *
- * @param $transaction
+ * @param commerce_payment_transaction $transaction
  *   The payment transaction object to be captured.
  *
  * @return bool
@@ -167,7 +163,7 @@ function commerce_elavon_commerce_payment_method_info() {
     'title' => t('Elavon direct processing'),
     'short_title' => t('Elavon direct processing'),
     'display_title' => t('Credit card'),
-    'description' => t('Integrates Elavon direct processing payment, direct or delayed capture '),
+    'description' => t('Integrates Elavon direct processing payment, direct or delayed capture.'),
     'cardonfile' => array(
       'charge callback' => 'commerce_elavon_direct_cardonfile_charge',
       'create callback' => 'commerce_elavon_direct_cardonfile_create',
@@ -187,7 +183,7 @@ function commerce_elavon_default_settings() {
     'accountid' => '',
     'userid' => '',
     'pin' => '',
-    'txn_mode' => ELAVON_TXN_MODE_TEST,
+    'txn_mode' => COMMERCE_ELAVON_TXN_MODE_TEST,
     'txn_type' => COMMERCE_CREDIT_AUTH_CAPTURE,
     'log' => array('request' => '0', 'response' => '0'),
     'cardonfile' => FALSE,
@@ -240,8 +236,8 @@ function commerce_elavon_base_settings_form($settings) {
     '#title' => t('Transaction mode'),
     '#description' => t('Adjust to live transactions when you are ready to start processing real payments.'),
     '#options' => array(
-      ELAVON_TXN_MODE_PRODUCTION => t('Live transactions in a production account'),
-      ELAVON_TXN_MODE_TEST => t('Test transactions with your account'),
+      COMMERCE_ELAVON_TXN_MODE_PRODUCTION => t('Live transactions in a production account'),
+      COMMERCE_ELAVON_TXN_MODE_TEST => t('Test transactions with your account'),
     ),
     '#default_value' => $settings['txn_mode'],
   );
@@ -375,15 +371,16 @@ function commerce_elavon_direct_submit_form_submit($payment_method, $pane_form, 
  *
  * @param object $payment_method
  *   The payment method instance definition array.
- * @param $card_data
+ * @param Object $card_data
  *   Card on File entity.
- * @param $order
+ * @param commerce_order $order
  *   The order object that is being processed.
  * @param array $charge
  *   The price array for the charge amount with keys of 'amount' and 'currency'
  *   If null the total value of the order is used.
  *
- * @return FALSE if the transaction was not successful, TRUE otherwise.
+ * @return bool
+ *   FALSE if the transaction was not successful, TRUE otherwise.
  */
 function commerce_elavon_direct_cardonfile_charge($payment_method, $card_data, $order, $charge = NULL) {
   // Format order total for the transaction.
@@ -475,7 +472,7 @@ function commerce_elavon_direct_cardonfile_delete($form, &$form_state, $payment_
  * Proceed to the payment and record a transaction.
  */
 function commerce_elavon_transaction_process($payment_method, $info, $order, $charge) {
-  // Set Tax amount
+  // Set Tax amount.
   $sales_tax_total = 0;
   // Loop through and get all tax elements and add them up.
   $order_working_array = $order->commerce_order_total[LANGUAGE_NONE][0]['data']['components'];
@@ -546,7 +543,7 @@ function commerce_elavon_transaction_process($payment_method, $info, $order, $ch
   $transaction->payload[REQUEST_TIME] = isset($response['xml']) ? $response['xml']->asXML() : '';
   // Store the Message of transaction in the remote status.
   $transaction->remote_status = $response['msg'];
-  $transaction->message = implode('<br />', commerce_elavon_get_log_message($response, ELAVON_TXN_TYPE_DIRECT_CAPTURE));
+  $transaction->message = implode('<br />', commerce_elavon_get_log_message($response, COMMERCE_ELAVON_TXN_TYPE_DIRECT_CAPTURE));
   // Set the transaction status based on the type of transaction this was.
   if ($response['status']) {
     $transaction->status = $auth_only ? COMMERCE_PAYMENT_STATUS_PENDING : COMMERCE_PAYMENT_STATUS_SUCCESS;
@@ -627,19 +624,13 @@ function commerce_elavon_get_billing_info($order) {
 
 /**
  * Returns the URL to the Elavon server determined by transaction mode.
- *
- * @param $txn_mode
- *   The transaction mode that relates to the production or test server.
- *
- * @return
- *   The URL to use to submit requests to the Elavon server.
  */
 function commerce_elavon_server_url($txn_mode) {
   switch ($txn_mode) {
-    case ELAVON_TXN_MODE_PRODUCTION:
+    case COMMERCE_ELAVON_TXN_MODE_PRODUCTION:
       return 'https://www.myvirtualmerchant.com/VirtualMerchant/processxml.do';
 
-    case ELAVON_TXN_MODE_TEST:
+    case COMMERCE_ELAVON_TXN_MODE_TEST:
       return 'https://demo.myvirtualmerchant.com/VirtualMerchantDemo/processxml.do';
   }
 }
@@ -647,7 +638,7 @@ function commerce_elavon_server_url($txn_mode) {
 /**
  * Submits a request to Elavon.
  *
- * @param $payment_method
+ * @param object $payment_method
  *   The payment method instance array associated with this API request.
  */
 function commerce_elavon_request($payment_method, $info = array()) {
@@ -682,7 +673,15 @@ function commerce_elavon_request($payment_method, $info = array()) {
       $log_nvp['ssl_cvv2cvc2'] = str_repeat('X', strlen($log_nvp['ssl_cvv2cvc2']));
     }
 
-    watchdog('commerce_elavon', 'Elavon request to @url: !param', array('@url' => $url, '!param' => '<pre>' . check_plain(print_r($log_nvp, TRUE)) . '</pre>'), WATCHDOG_DEBUG);
+    watchdog(
+      'commerce_elavon',
+      'Elavon request to @url: !param',
+      array(
+        '@url' => $url,
+        '!param' => '<pre>' . check_plain(print_r($log_nvp, TRUE)) . '</pre>',
+      ),
+      WATCHDOG_DEBUG
+    );
   }
 
   // Prepare xml for Elavon.
