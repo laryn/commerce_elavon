@@ -419,7 +419,7 @@ function commerce_elavon_direct_cardonfile_create($form, &$form_state, $payment_
     !empty($response['xml']->ssl_token_response)
     && (string) $response['xml']->ssl_token_response === 'SUCCESS'
     && !empty($response['xml']->ssl_add_token_response)
-    && (string) $response['xml']->ssl_add_token_response === 'Card Added'
+    && ((string) $response['xml']->ssl_add_token_response === 'Card Added' || (string) $response['xml']->ssl_add_token_response === 'Card Updated')
   ) {
     $card_data->remote_id = (string) $response['xml']->ssl_token;
     return $card_data;
