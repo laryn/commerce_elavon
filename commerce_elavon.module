@@ -385,7 +385,8 @@ function commerce_elavon_direct_submit_form_submit($payment_method, $pane_form, 
 function commerce_elavon_direct_cardonfile_charge($payment_method, $card_data, $order, $charge = NULL) {
   // Format order total for the transaction.
   if (!isset($charge)) {
-    $charge = commerce_payment_order_balance($order);
+    $wrapper = entity_metadata_wrapper('commerce_order', $order);
+    $charge = commerce_line_items_total($wrapper->commerce_line_items);
   }
   $info = array(
     'ssl_token' => $card_data->remote_id,
