@@ -629,10 +629,10 @@ function commerce_elavon_get_billing_info($order) {
 function commerce_elavon_server_url($txn_mode) {
   switch ($txn_mode) {
     case COMMERCE_ELAVON_TXN_MODE_PRODUCTION:
-      return 'https://www.myvirtualmerchant.com/VirtualMerchant/processxml.do';
+      return 'https://api.convergepay.com/VirtualMerchant/processxml.do';
 
     case COMMERCE_ELAVON_TXN_MODE_TEST:
-      return 'https://demo.myvirtualmerchant.com/VirtualMerchantDemo/processxml.do';
+      return 'https://api.demo.convergepay.com/VirtualMerchantDemo/processxml.do';
   }
 }
 
