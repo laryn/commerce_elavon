@@ -279,7 +279,7 @@ class Onsite extends OnsitePaymentGatewayBase implements OnsiteInterface {
     $expires = CreditCard::calculateExpirationTimestamp($payment_details['expiration']['month'], $payment_details['expiration']['year']);
     $post_data = [
       'ssl_transaction_type' => 'ccgettoken',
-      'ssl_show_form' => 'false',
+      'ssl_show_form' => 'true',
       'ssl_card_number' => $payment_details['number'],
       'ssl_exp_date' => $payment_details['expiration']['month'] . substr($payment_details['expiration']['year'],2),
       'ssl_cvv2cvc2_indicator' => '1',
@@ -385,6 +385,8 @@ class Onsite extends OnsitePaymentGatewayBase implements OnsiteInterface {
     }
 
     $xmldata .= '</txn>';
+ksm($xmldata);
+ksm($transaction_url);
     // Setup the cURL request.
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $transaction_url);
@@ -406,6 +408,7 @@ class Onsite extends OnsitePaymentGatewayBase implements OnsiteInterface {
     }
     curl_close($ch);
 
+ksm($result);
     if (!empty($result)) {
       // Extract the result into an XML response object.
       $xml = new \SimpleXMLElement($result);

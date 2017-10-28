@@ -47,6 +47,7 @@ class RedirectController implements ContainerInjectionInterface {
     $cancel = $this->currentRequest->request->get('cancel');
     $return = $this->currentRequest->request->get('return');
     $total = $this->currentRequest->request->get('total');
+ksm($this->currentRequest->request);
     if ($total > 20) {
       return new TrustedRedirectResponse($return);
     }
