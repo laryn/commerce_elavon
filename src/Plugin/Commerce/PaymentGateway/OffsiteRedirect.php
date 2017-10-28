@@ -83,13 +83,15 @@ class OffsiteRedirect extends OffsitePaymentGatewayBase {
   public function onReturn(OrderInterface $order, Request $request) {
     // @todo Add examples of request validation.
     $payment_storage = $this->entityTypeManager->getStorage('commerce_payment');
+    $result = $request->query->get('ssl_result_message');
+    $state = ($result == 'APPROVAL') ? 'Completed' : $result;
     $payment = $payment_storage->create([
-      'state' => 'authorization',
+      'state' => $state,
       'amount' => $order->getTotalPrice(),
       'payment_gateway' => $this->entityId,
       'order_id' => $order->id(),
-      'remote_id' => $request->query->get('txn_id'),
-      'remote_state' => $request->query->get('payment_status'),
+      'remote_id' => $request->query->get('ssl_txn_id'),
+      'remote_state' => $request->query->get('ssl_result'),
     ]);
     $payment->save();
     drupal_set_message('Payment was processed');

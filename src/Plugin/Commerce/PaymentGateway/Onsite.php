@@ -385,8 +385,6 @@ class Onsite extends OnsitePaymentGatewayBase implements OnsiteInterface {
     }
 
     $xmldata .= '</txn>';
-ksm($xmldata);
-ksm($transaction_url);
     // Setup the cURL request.
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $transaction_url);
@@ -408,7 +406,6 @@ ksm($transaction_url);
     }
     curl_close($ch);
 
-ksm($result);
     if (!empty($result)) {
       // Extract the result into an XML response object.
       $xml = new \SimpleXMLElement($result);
