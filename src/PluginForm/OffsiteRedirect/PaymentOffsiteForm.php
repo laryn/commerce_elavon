@@ -14,6 +14,7 @@ class PaymentOffsiteForm extends BasePaymentOffsiteForm {
    */
   public function buildConfigurationForm(array $form, FormStateInterface $form_state) {
     $form = parent::buildConfigurationForm($form, $form_state);
+    $module_handler = \Drupal::moduleHandler();
 
     /** @var \Drupal\commerce_payment\Entity\PaymentInterface $payment */
     $payment = $this->entity;
@@ -42,6 +43,11 @@ class PaymentOffsiteForm extends BasePaymentOffsiteForm {
       //'ssl_error_url'
       'ssl_receipt_decl_get_url' => $form['#cancel_url'],
     ];
+
+    $order = $payment->getOrder();
+
+    // Give custom modules to handle the data before sending over to payment gateway.
+    $module_handler->invokeAll('commerce_elavon_offsite_payment', [&$data, $order]);
 
     return $this->buildRedirectForm($form, $form_state, $redirect_url, $data, $redirect_method);
   }
