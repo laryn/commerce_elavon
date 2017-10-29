@@ -193,7 +193,7 @@ class Onsite extends OnsitePaymentGatewayBase implements OnsiteInterface {
     $remote_id = $payment->getRemoteId();
 
     $post_data = [
-      'ssl_transaction_type' => 'ccvoid',
+      'ssl_transaction_type' => 'ccdelete',
       'ssl_txn_id' => $remote_id,
     ];
     $response = $this->elavonPost($post_data);
