@@ -295,6 +295,7 @@ class Onsite extends OnsitePaymentGatewayBase implements OnsiteInterface {
     ];
 
     $response = $this->elavonPost($post_data);
+
     if (isset($response['xml'])) {
       $result_obj = $response['xml'];
       if (isset($result_obj->ssl_token_response)) {
@@ -385,6 +386,10 @@ class Onsite extends OnsitePaymentGatewayBase implements OnsiteInterface {
     }
 
     $xmldata .= '</txn>';
+
+    // Revert back the single quote.
+    $xmldata = str_replace('&#039;', "'", $xmldata);
+
     // Setup the cURL request.
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $transaction_url);
