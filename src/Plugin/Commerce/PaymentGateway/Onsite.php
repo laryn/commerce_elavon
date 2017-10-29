@@ -125,7 +125,7 @@ class Onsite extends OnsitePaymentGatewayBase implements OnsiteInterface {
 
     $payment_method_token = $payment_method->getRemoteId();
     $post_data = [
-      'ssl_transaction_type' => 'ccsale',
+      'ssl_transaction_type' => $capture ? 'ccsale' : 'ccauthonly',
       'ssl_amount' => $amount,
       'ssl_token' => $payment_method_token,
     ];
@@ -166,10 +166,9 @@ class Onsite extends OnsitePaymentGatewayBase implements OnsiteInterface {
     $remote_id = $payment->getRemoteId();
     $number = $amount->getNumber();
     $post_data = [
-      'ssl_transaction_type' => 'ccforce',
+      'ssl_transaction_type' => 'cccomplete',
       'ssl_amount' => $number,
-      'ssl_token' => $payment_method_token,
-      'ssl_approval_code' => $remote_id,
+      'ssl_txn_id' => $remote_id,
     ];
     $response = $this->elavonPost($post_data);
 
