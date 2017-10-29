@@ -44,6 +44,10 @@ class PaymentOffsiteForm extends BasePaymentOffsiteForm {
       'ssl_receipt_decl_get_url' => $form['#cancel_url'],
     ];
 
+    if ($configuration['multicurrency']) {
+      $data['ssl_transaction_currency'] = $payment->getAmount()->getCurrencyCode();
+    }
+
     $order = $payment->getOrder();
 
     // Give custom modules to handle the data before sending over to payment gateway.

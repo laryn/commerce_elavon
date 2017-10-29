@@ -29,7 +29,9 @@ class OffsiteRedirect extends OffsitePaymentGatewayBase {
    * {@inheritdoc}
    */
   public function defaultConfiguration() {
-    return parent::defaultConfiguration();
+    return [
+      'multicurrency' => FALSE,
+    ] + parent::defaultConfiguration();
   }
 
   /**
@@ -61,6 +63,17 @@ class OffsiteRedirect extends OffsitePaymentGatewayBase {
       '#required' => TRUE,
     ];
 
+    $form['multicurrency'] = [
+      '#type' => 'radios',
+      '#title' => $this->t('Multi-Currency support'),
+      '#description' => $this->t('Use only with a terminal that is setup with Multi-Currency.'),
+      '#options' => [
+        TRUE => $this->t('Support Multi-Currency'),
+        FALSE => $this->t('Do Not Support'),
+      ],
+      '#default_value' => (int) $this->configuration['multicurrency'],
+    ];
+
     return $form;
   }
 
@@ -74,6 +87,7 @@ class OffsiteRedirect extends OffsitePaymentGatewayBase {
       $this->configuration['merchant_id'] = $values['merchant_id'];
       $this->configuration['user_id'] = $values['user_id'];
       $this->configuration['pin'] = $values['pin'];
+      $this->configuration['multicurrency'] = $values['multicurrency'];
     }
   }
 
