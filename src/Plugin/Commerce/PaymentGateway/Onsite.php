@@ -192,6 +192,7 @@ class Onsite extends OnsitePaymentGatewayBase implements OnsiteInterface {
     // See \Drupal\commerce_payment\Exception for the available exceptions.
     $remote_id = $payment->getRemoteId();
 
+    // Converge payment use ccdelete to void authorization.
     $post_data = [
       'ssl_transaction_type' => 'ccdelete',
       'ssl_txn_id' => $remote_id,
@@ -267,15 +268,6 @@ class Onsite extends OnsitePaymentGatewayBase implements OnsiteInterface {
 
     $address = $payment_method->getBillingProfile()->address->first();
 
-    // If the remote API needs a remote customer to be created.
-    $owner = $payment_method->getOwner();
-    if ($owner && $owner->isAuthenticated()) {
-      $customer_id = $this->getRemoteCustomerId($owner);
-      // If $customer_id is empty, create the customer remotely and then do
-      // $this->setRemoteCustomerId($owner, $customer_id);
-      // $owner->save();
-    }
-
     // Perform the create request here, throw an exception if it fails.
     // See \Drupal\commerce_payment\Exception for the available exceptions.
     // You might need to do different API requests based on whether the
@@ -344,9 +336,7 @@ class Onsite extends OnsitePaymentGatewayBase implements OnsiteInterface {
    * {@inheritdoc}
    */
   public function deletePaymentMethod(PaymentMethodInterface $payment_method) {
-    // Delete the remote record here, throw an exception if it fails.
-    // See \Drupal\commerce_payment\Exception for the available exceptions.
-    // Delete the local entity.
+    // No Elavon api avaiabe so far to remove remote record without refunding.
     $payment_method->delete();
   }
 
