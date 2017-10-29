@@ -41,8 +41,6 @@ class Onsite extends OnsitePaymentGatewayBase implements OnsiteInterface {
   public function __construct(array $configuration, $plugin_id, $plugin_definition, EntityTypeManagerInterface $entity_type_manager, PaymentTypeManager $payment_type_manager, PaymentMethodTypeManager $payment_method_type_manager, TimeInterface $time) {
     parent::__construct($configuration, $plugin_id, $plugin_definition, $entity_type_manager, $payment_type_manager, $payment_method_type_manager, $time);
 
-    // You can create an instance of the SDK here and assign it to $this->api.
-    // Or inject Guzzle when there's no suitable SDK.
   }
 
   /**
@@ -50,7 +48,7 @@ class Onsite extends OnsitePaymentGatewayBase implements OnsiteInterface {
    */
   public function defaultConfiguration() {
     return [
-      'api_key' => '',
+      'multicurrency' => FALSE,
     ] + parent::defaultConfiguration();
   }
 
@@ -60,8 +58,6 @@ class Onsite extends OnsitePaymentGatewayBase implements OnsiteInterface {
   public function buildConfigurationForm(array $form, FormStateInterface $form_state) {
     $form = parent::buildConfigurationForm($form, $form_state);
 
-    // Example credential. Also needs matching schema in
-    // config/schema/$your_module.schema.yml.
     $form['merchant_id'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Merchant Id'),
@@ -83,6 +79,17 @@ class Onsite extends OnsitePaymentGatewayBase implements OnsiteInterface {
       '#required' => TRUE,
     ];
 
+    $form['multicurrency'] = [
+      '#type' => 'radios',
+      '#title' => $this->t('Multi-Currency support'),
+      '#description' => $this->t('Use only with a terminal that is setup with Multi-Currency.'),
+      '#options' => [
+        TRUE => $this->t('Support Multi-Currency'),
+        FALSE => $this->t('Do Not Support'),
+      ],
+      '#default_value' => (int) $this->configuration['multicurrency'],
+    ];
+
     return $form;
   }
 
@@ -97,6 +104,7 @@ class Onsite extends OnsitePaymentGatewayBase implements OnsiteInterface {
       $this->configuration['merchant_id'] = $values['merchant_id'];
       $this->configuration['user_id'] = $values['user_id'];
       $this->configuration['pin'] = $values['pin'];
+      $this->configuration['multicurrency'] = $values['multicurrency'];
     }
   }
 
@@ -121,6 +129,9 @@ class Onsite extends OnsitePaymentGatewayBase implements OnsiteInterface {
       'ssl_amount' => $amount,
       'ssl_token' => $payment_method_token,
     ];
+    if ($this->configuration['multicurrency']) {
+      $post_data['ssl_transaction_currency'] = $payment->getAmount()->getCurrencyCode();
+    }
     $response = $this->elavonPost($post_data);
 
     if ($response['status']) {
