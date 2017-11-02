@@ -30,6 +30,8 @@ class PaymentOffsiteForm extends BasePaymentOffsiteForm {
       $redirect_url = 'https://api.convergepay.com/VirtualMerchant/process.do';
     }
 
+    $order = $payment->getOrder();
+
     $data = [
       'ssl_merchant_id' => $configuration['merchant_id'],
       'ssl_user_id' => $configuration['user_id'],
@@ -42,17 +44,15 @@ class PaymentOffsiteForm extends BasePaymentOffsiteForm {
       'ssl_card_present' => 'N',
       //'ssl_error_url'
       'ssl_receipt_decl_get_url' => $form['#cancel_url'],
+      'ssl_invoice_number' => $order->get('order_id')->getString(),
     ];
-
     if ($configuration['multicurrency']) {
       $data['ssl_transaction_currency'] = $payment->getAmount()->getCurrencyCode();
     }
 
-    $order = $payment->getOrder();
 
     // Give custom modules to handle the data before sending over to payment gateway.
     $module_handler->invokeAll('commerce_elavon_offsite_payment', [&$data, $order]);
-
     return $this->buildRedirectForm($form, $form_state, $redirect_url, $data, $redirect_method);
   }
 
