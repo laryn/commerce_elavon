@@ -6,6 +6,7 @@ use Drupal\commerce_order\Entity\OrderInterface;
 use Drupal\commerce_payment\Plugin\Commerce\PaymentGateway\OffsitePaymentGatewayBase;
 use Drupal\Core\Form\FormStateInterface;
 use Symfony\Component\HttpFoundation\Request;
+use Drupal\commerce_payment\Exception\DeclineException;
 
 /**
  * Provides the Off-site Redirect payment gateway.
@@ -31,6 +32,9 @@ class OffsiteRedirect extends OffsitePaymentGatewayBase {
   public function defaultConfiguration() {
     return [
       'multicurrency' => FALSE,
+      'merchant_id' => '',
+      'user_id' => '',
+      'pin' => '',
     ] + parent::defaultConfiguration();
   }
 
@@ -99,16 +103,22 @@ class OffsiteRedirect extends OffsitePaymentGatewayBase {
     $payment_storage = $this->entityTypeManager->getStorage('commerce_payment');
     $result = $request->query->get('ssl_result_message');
     $state = ($result == 'APPROVAL') ? 'Completed' : $result;
-    $payment = $payment_storage->create([
-      'state' => $state,
-      'amount' => $order->getTotalPrice(),
-      'payment_gateway' => $this->entityId,
-      'order_id' => $order->id(),
-      'remote_id' => $request->query->get('ssl_txn_id'),
-      'remote_state' => $request->query->get('ssl_result'),
-    ]);
-    $payment->save();
-    drupal_set_message('Payment was processed');
+    if ($state === 'Completed') {
+      $payment = $payment_storage->create([
+        'state' => $state,
+        'amount' => $order->getTotalPrice(),
+        'payment_gateway' => $this->entityId,
+        'order_id' => $order->id(),
+        'remote_id' => $request->query->get('ssl_txn_id'),
+        'remote_state' => $request->query->get('ssl_result'),
+      ]);
+      $payment->save();
+      drupal_set_message('Payment was processed');
+    }
+    else {
+      drupal_set_message('Payment was NOT processed');
+      throw new DeclineException();
+    }
   }
 
 }

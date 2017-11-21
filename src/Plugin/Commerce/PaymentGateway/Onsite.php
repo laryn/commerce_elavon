@@ -49,6 +49,9 @@ class Onsite extends OnsitePaymentGatewayBase implements OnsiteInterface {
   public function defaultConfiguration() {
     return [
       'multicurrency' => FALSE,
+      'merchant_id' => '',
+      'user_id' => '',
+      'pin' => '',
     ] + parent::defaultConfiguration();
   }
 
