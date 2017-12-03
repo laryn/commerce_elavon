@@ -112,6 +112,7 @@ class OffsiteRedirect extends OffsitePaymentGatewayBase {
         'remote_id' => $request->query->get('ssl_txn_id'),
         'remote_state' => $request->query->get('ssl_result'),
       ]);
+      $payment->setState('completed');
       $payment->save();
       drupal_set_message('Payment was processed');
     }
